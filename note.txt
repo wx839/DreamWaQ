@@ -1,0 +1,37 @@
+cd unitree_mujoco/simulate/build/./unitree_mujoco
+
+./unitree_rl_lab/unitree_rl_lab.sh -t \
+    --task Unitree-Go2-Velocity-DWAQ \
+    --num_envs 4096 \
+    --max_iterations 1000 \
+    --headless
+
+tensorboard --logdir ./logs/rsl_rl/unitree_go2_velocity_dwaq --port 6006  
+
+# Play测试
+./unitree_rl_lab/unitree_rl_lab.sh -p --task Unitree-Go2-Velocity-DWAQ --num_envs 10 \
+    --checkpoint logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-16_18-25-16/model_20000.pt
+
+
+断点训练
+./unitree_rl_lab/unitree_rl_lab.sh -t \                 
+    --task Unitree-Go2-Velocity-DWAQ \
+    --num_envs 4096 \
+    --max_iterations 10000 \
+    --headless \
+    --resume \
+    --load_run 2026-01-13_12-48-23 \
+    --checkpoint model_7200.pt
+
+
+后台挂起训练
+nohup ./unitree_rl_lab/unitree_rl_lab.sh -t \
+    --task Unitree-Go2-Velocity-DWAQ \
+    --num_envs 4096 \
+    --max_iterations 20000 \
+    --headless \
+    > dwaq_train.log 2>&1 &
+
+ps -ef | grep unitree   显示所有进程
+
+kill -9 12345   杀死进程ps
