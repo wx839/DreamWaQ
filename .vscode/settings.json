@@ -1,0 +1,44 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.pythonProjects": [],
+    "python.defaultInterpreterPath": "/home/wx/miniforge3/envs/env_isaaclab/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/rsl_rl",
+        "${workspaceFolder}/unitree_rl_lab/source/unitree_rl_lab",
+        "${workspaceFolder}/unitree_mujoco/simulate_python",
+        "/home/wx/IsaacLab/source",
+        "/home/wx/IsaacLab/source/isaaclab",
+        "/home/wx/IsaacLab/source/isaaclab_assets",
+        "/home/wx/IsaacLab/source/isaaclab_mimic",
+        "/home/wx/IsaacLab/source/isaaclab_rl",
+        "/home/wx/IsaacLab/source/isaaclab_tasks",
+        "/home/wx/IsaacLab/source/extensions/isaaclab.python.extra_deps",
+        "/home/wx/IsaacLab/source/extensions/isaaclab_tasks",
+        "/home/wx/miniforge3/envs/env_isaaclab/lib/python3.11/site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/rsl_rl",
+        "${workspaceFolder}/unitree_rl_lab/source/unitree_rl_lab",
+        "/home/wx/IsaacLab/source/isaaclab",
+        "/home/wx/IsaacLab/source/isaaclab_assets",
+        "/home/wx/IsaacLab/source/isaaclab_mimic",
+        "/home/wx/IsaacLab/source/isaaclab_rl",
+        "/home/wx/IsaacLab/source/isaaclab_tasks"
+    ],
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.indexing": true,
+    "python.analysis.packageIndexDepths": [
+        {
+            "name": "",
+            "depth": 5
+        }
+    ],
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "information"
+    },
+    "cmake.ignoreCMakeListsMissing": true
+}

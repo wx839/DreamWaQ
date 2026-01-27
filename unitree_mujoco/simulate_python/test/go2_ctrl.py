@@ -241,8 +241,8 @@ if __name__ == "__main__":
     crc = CRC()
 
     #ONNX模型加载，一个encoder一个policy
-    onnx_path_01 = "/home/wx/DreamWaQ/logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-20_18-25-57/exported/policy.onnx"   # ← 改成你的 policy 路径
-    onnx_path_02 = "/home/wx/DreamWaQ/logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-20_18-25-57/exported/encoder.onnx"
+    onnx_path_01 = "/home/wx/DreamWaQ/logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-26_18-40-45/exported/policy.onnx"   # ← 改成你的 policy 路径
+    onnx_path_02 = "/home/wx/DreamWaQ/logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-26_18-40-45/exported/encoder.onnx"
     sess_policy = ort.InferenceSession(
         onnx_path_01,
         providers=["CPUExecutionProvider"],

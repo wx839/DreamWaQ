@@ -122,30 +122,29 @@ def foot_clearance_reward(
     asset_cfg: SceneEntityCfg, 
     sensor_cfg: SceneEntityCfg,
     target_height: float,
-    ground_height: float = 0.02
+    ground_height: float = 0.04
 ) -> torch.Tensor:
-    """Foot clearance reward following DreamWaQ paper (Table I) with contact-aware logic.
+    """Foot clearance reward following DreamWaQ paper (Table I) - velocity-weighted height penalty.
     
-    Formula: r_clearance = -0.01 * Σ_k (p_des_f,z,k - p_f,z,k)^2 * v_f,xy,k
+    Formula: r_clearance = -Σ_k (p_des - p_f,z,k)^2 * v_f,xy,k
     
-    Key improvement: p_des is dynamic based on contact state:
-        - Swing phase (no contact): p_des = target_height (e.g., 0.1m)
-        - Stance phase (in contact): p_des = ground_height (e.g., 0.02m)
+    Key insight: Single target height (e.g., 0.08m) with velocity weighting:
+        - Swing phase (high v_xy): Large penalty if not at target → forces lifting
+        - Stance phase (low v_xy): Small penalty → allows ground contact
     
-    This prevents the robot from keeping feet low all the time to minimize penalty.
+    This is the original DreamWaQ design - velocity naturally distinguishes phases.
     """
     asset: RigidObject = env.scene[asset_cfg.name]
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     
-    # 获取接触状态 (True=接触地面, False=空中/摆动相)
-    is_contact = contact_sensor.data.net_forces_w_history[:, 0, sensor_cfg.body_ids, 2] > 1.0
+    # 获取接触状态 (更严格的阈值 5.0N 防止误判)
+    is_contact = contact_sensor.data.net_forces_w_history[:, 0, sensor_cfg.body_ids, 2] > 5.0
     
-    # 动态期望高度：接触相要求贴地，摆动相要求抬起
-    # p_des = ground_height (stance) or target_height (swing)
-    desired_height = torch.where(
-        is_contact,
-        torch.full_like(asset.data.body_pos_w[:, asset_cfg.body_ids, 2], ground_height),
-        torch.full_like(asset.data.body_pos_w[:, asset_cfg.body_ids, 2], target_height)
+    # 使用单一期望高度（DreamWaQ原始设计）
+    # 速度加权会自动区分摆动/支撑相
+    desired_height = torch.full_like(
+        asset.data.body_pos_w[:, asset_cfg.body_ids, 2], 
+        target_height
     )
     
     # 1. 计算高度误差平方: (p_des - p_actual)^2
@@ -155,7 +154,7 @@ def foot_clearance_reward(
     # 2. 计算足部XY平面速度: v_xy
     foot_vel_xy = torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2)
     
-    # 3. 按论文公式: (p_des - p)^2 * v_xy
+    # 3. 按论文公式: (p_des - p)^2 * v_xy (速度越大惩罚越重)
     raw_cost = foot_z_error_sq * foot_vel_xy
     
     # 4. 对所有腿求和
@@ -181,6 +180,7 @@ def foot_clearance_reward(
             print(f"{body_name:<12} | {h_actual:>7.4f}m | {h_des:>7.4f}m | {v_xy:>7.4f} | {contact:<6} | {cost_val:>8.6f}")
         
         print(f"{'='*80}\n")
+        # print(f"######## Learning iteration {env.common_step_counter // env.max_episode_length}/{env.max_iterations} ########\n")
     
     return reward
 
@@ -302,6 +302,40 @@ def monitor_foot_height(
     
     # 返回零奖励（仅用于监控）
     return torch.zeros(env.num_envs, device=env.device)
+
+
+def swing_foot_height_reward(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    sensor_cfg: SceneEntityCfg,
+    target_height: float = 0.08,
+    velocity_threshold: float = 0.3
+) -> torch.Tensor:
+    """Penalize swing phase feet for deviating from target height.
+    
+    Key change: Instead of rewarding "higher is better", penalize deviation from target.
+    This prevents over-lifting (0.2m+) and encourages staying near 0.06m.
+    
+    Only applies to feet that are:
+    1. Not in contact with ground (force < 5N)
+    2. Moving horizontally (v_xy > threshold)
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    
+    # 检测摆动相：无接触 + 高速度
+    is_contact = contact_sensor.data.net_forces_w_history[:, 0, sensor_cfg.body_ids, 2] > 5.0
+    foot_vel_xy = torch.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=2)
+    is_swinging = (~is_contact) & (foot_vel_xy > velocity_threshold)
+    
+    # 计算高度偏差平方（惩罚过高或过低）
+    actual_height = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    height_error_sq = torch.square(actual_height - target_height)
+    
+    # 只对摆动相的腿计算惩罚
+    penalty_per_foot = torch.where(is_swinging, height_error_sq, torch.zeros_like(height_error_sq))
+    
+    return torch.sum(penalty_per_foot, dim=1)
 
 
 """

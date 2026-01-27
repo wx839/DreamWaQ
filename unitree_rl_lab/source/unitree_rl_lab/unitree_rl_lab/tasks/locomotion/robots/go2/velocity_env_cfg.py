@@ -197,7 +197,7 @@ class CommandsCfg:
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.1,
-        debug_vis=True,
+        debug_vis=False,  # 关闭以避免下载USD文件导致的网络错误
         # 初始范围较小，通过课程学习逐步扩大到 limit_ranges
         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
             lin_vel_x=(-0.2, 0.3), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.3, 0.3)
@@ -299,15 +299,27 @@ class RewardsCfg:
     #Body height - 惩罚身体高度偏离目标高度
     base_height = RewTerm(func=mdp.base_height_l2, weight=-1.0, params={"target_height": 0.28})
 
-    #Foot clearance - 严格按照DreamWaQ论文Table I的公式（增强版：接触感知）
+    #Foot clearance - DreamWaQ论文原始公式（速度加权单一期望高度）
     foot_clearance = RewTerm(
         func=mdp.foot_clearance_reward,
-        weight=-0.1,  # 增强权重，确保抬腿（原-0.05太弱）
+        weight=-0.5,  # 降低权重，避免过度强制（原-0.5太强导致抬太高）
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            "target_height": 0.06,  # 摆动相期望高度: 6cm（更现实的目标）
-            "ground_height": 0.02,  # 支撑相期望高度: 2cm (接近地面)
+            "target_height": 0.08,  # 单一期望高度: 8cm（速度加权自动区分摆动/支撑相）
+            "ground_height": 0.04,  # 此参数已弃用
+        },
+    )
+    
+    # 摆动相足端高度惩罚（惩罚偏离目标值，防止过度抬腿）
+    swing_foot_height = RewTerm(
+        func=mdp.swing_foot_height_reward,
+        weight=0.2,  # 负权重：惩罚偏离0.06m的行为（过高或过低都惩罚）
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            "target_height": 0.08,
+            "velocity_threshold": 0.3,
         },
     )
     #Action rate
@@ -344,11 +356,11 @@ class RewardsCfg:
     # -- feet (启用以防止拖地)
     feet_air_time = RewTerm(
         func=mdp.feet_air_time,
-        weight=0.2,  # 正奖励，鼓励每条腿都有空中时间
+        weight=0.5,  # 增强正奖励，强烈鼓励每条腿都有空中时间
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
             "command_name": "base_velocity",
-            "threshold": 0.4,  # 降低阈值，更容易触发
+            "threshold": 0.3,  # 降低阈值到0.3秒，更容易获得奖励
         },
     )
     # air_time_variance = RewTerm(
@@ -358,7 +370,7 @@ class RewardsCfg:
     # )
     feet_slide = RewTerm(
         func=mdp.feet_slide,
-        weight=-0.15,  # 惩罚拖地滑行
+        weight=-0.3,  # 增强惩罚拖地滑行（防止拖地）
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),

@@ -1,0 +1,47 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train DWAQ (Headless)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/unitree_rl_lab/scripts/rsl_rl/train.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--task", "Unitree-Go2-Velocity-DWAQ",
+                "--num_envs", "4096",
+                "--max_iterations", "20000",
+                "--headless"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/unitree_rl_lab/source:${workspaceFolder}/rsl_rl:${env:PYTHONPATH}"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Play DWAQ ",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/unitree_rl_lab/scripts/rsl_rl/play.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--task", "Unitree-Go2-Velocity-DWAQ",
+                "--num_envs", "1",
+                "--checkpoint","logs/rsl_rl/unitree_go2_velocity_dwaq/2026-01-19_18-29-21/model_14100.pt"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/unitree_rl_lab/source:${workspaceFolder}/rsl_rl:${env:PYTHONPATH}"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Debug unitree_mujoco.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/unitree_mujoco/simulate_python/unitree_mujoco.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/unitree_mujoco/simulate_python"
+        }
+
+    ]
+}   
