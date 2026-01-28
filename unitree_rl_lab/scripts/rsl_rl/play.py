@@ -1,3 +1,292 @@
+# # Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+# # All rights reserved.
+# #
+# # SPDX-License-Identifier: BSD-3-Clause
+
+# """Script to play a checkpoint if an RL agent from RSL-RL."""
+
+# """Launch Isaac Sim Simulator first."""
+
+# import argparse
+# from importlib.metadata import version
+
+# from isaaclab.app import AppLauncher
+
+# # local imports
+# import cli_args  # isort: skip
+
+# # add argparse arguments
+# parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
+# parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
+# parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
+# parser.add_argument(
+#     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
+# )
+# parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+# parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+# parser.add_argument(
+#     "--use_pretrained_checkpoint",
+#     action="store_true",
+#     help="Use the pre-trained checkpoint from Nucleus.",
+# )
+# parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+# # append RSL-RL cli arguments
+# cli_args.add_rsl_rl_args(parser)
+# # append AppLauncher cli args
+# AppLauncher.add_app_launcher_args(parser)
+# args_cli = parser.parse_args()
+# # always enable cameras to record video
+# if args_cli.video:
+#     args_cli.enable_cameras = True
+
+# # launch omniverse app
+# app_launcher = AppLauncher(args_cli)
+# simulation_app = app_launcher.app
+
+# """Rest everything follows."""
+
+# import gymnasium as gym
+# import os
+# import time
+# import torch
+
+# from rsl_rl.runners import OnPolicyRunner
+
+# import isaaclab_tasks  # noqa: F401
+# from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
+# from isaaclab.utils.assets import retrieve_file_path
+# from isaaclab.utils.dict import print_dict
+# from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+# from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+# from isaaclab_tasks.utils import get_checkpoint_path
+
+# import unitree_rl_lab.tasks  # noqa: F401
+# from unitree_rl_lab.utils.parser_cfg import parse_env_cfg
+
+# import copy
+
+# class DWAQEncoderONNX(torch.nn.Module):
+#     """
+#     ONNX wrapper for DWAQ encoder.
+#     Input : [B, history_len * obs_dim]
+#     Output: [B, cenet_out_dim]  (code)
+#     """
+#     def __init__(self, policy):
+#         super().__init__()
+#         self.policy = policy
+
+#     def forward(self, obs_history_flat: torch.Tensor):
+#         # 直接复用你真实的 DWAQ 逻辑
+#         # cenet_forward returns: code(19), vel(3), decode(45), mean_latent(16), logvar_latent(16)
+#         code, _, _, _, _ = self.policy.cenet_forward(obs_history_flat)
+#         return code
+    
+# def export_dwaq_encoder_as_onnx(
+#     policy,
+#     path: str,
+#     filename: str = "encoder.onnx",
+# ):
+#     os.makedirs(path, exist_ok=True)
+
+#     encoder_wrapper = DWAQEncoderONNX(policy)
+#     encoder_wrapper = copy.deepcopy(encoder_wrapper)
+#     encoder_wrapper.to("cpu")
+#     encoder_wrapper.eval()
+
+#     # Encoder expects history_length + 1 timesteps (5 history + 1 current)
+#     dummy = torch.zeros(
+#         1,
+#         (policy.history_length + 1) * policy.num_policy_obs,
+#     )
+
+#     torch.onnx.export(
+#         encoder_wrapper,
+#         dummy,
+#         os.path.join(path, filename),
+#         export_params=True,
+#         opset_version=18,
+#         input_names=["obs_history"],
+#         output_names=["code"],
+#         dynamic_axes={},
+#     )
+
+#     print(f"[INFO] Exported DWAQ encoder to {os.path.join(path, filename)}")
+
+
+
+
+# def main():
+#     """Play with RSL-RL agent."""
+#     # parse configuration
+#     env_cfg = parse_env_cfg(
+#         args_cli.task,
+#         device=args_cli.device,
+#         num_envs=args_cli.num_envs,
+#         use_fabric=not args_cli.disable_fabric,
+#         entry_point_key="play_env_cfg_entry_point",
+#     )
+#     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
+
+#     # specify directory for logging experiments
+#     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+#     log_root_path = os.path.abspath(log_root_path)
+#     print(f"[INFO] Loading experiment from directory: {log_root_path}")
+#     if args_cli.use_pretrained_checkpoint:
+#         resume_path = get_published_pretrained_checkpoint("rsl_rl", args_cli.task)
+#         if not resume_path:
+#             print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
+#             return
+#     elif args_cli.checkpoint:
+#         resume_path = retrieve_file_path(args_cli.checkpoint)
+#     else:
+#         resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+
+#     log_dir = os.path.dirname(resume_path)
+
+#     # create isaac environment
+#     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+#     # convert to single-agent instance if required by the RL algorithm
+#     if isinstance(env.unwrapped, DirectMARLEnv):
+#         env = multi_agent_to_single_agent(env)
+
+#     # wrap for video recording
+#     if args_cli.video:
+#         video_kwargs = {
+#             "video_folder": os.path.join(log_dir, "videos", "play"),
+#             "step_trigger": lambda step: step == 0,
+#             "video_length": args_cli.video_length,
+#             "disable_logger": True,
+#         }
+#         print("[INFO] Recording videos during training.")
+#         print_dict(video_kwargs, nesting=4)
+#         env = gym.wrappers.RecordVideo(env, **video_kwargs)
+
+#     # wrap around environment for rsl-rl
+#     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+
+#     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
+#     # load previously trained model
+#     if not hasattr(agent_cfg, "class_name") or agent_cfg.class_name == "OnPolicyRunner":
+#         runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+#     elif agent_cfg.class_name == "DistillationRunner":
+#         from rsl_rl.runners import DistillationRunner
+
+#         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+#     else:
+#         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+#     runner.load(resume_path)
+
+#     # obtain the trained policy for inference
+#     policy = runner.get_inference_policy(device=env.unwrapped.device)
+
+#     # extract the neural network module
+#     # we do this in a try-except to maintain backwards compatibility.
+#     try:
+#         # version 2.3 onwards
+#         policy_nn = runner.alg.policy
+#     except AttributeError:
+#         # version 2.2 and below
+#         policy_nn = runner.alg.actor_critic
+
+#     # extract the normalizer
+#     if hasattr(policy_nn, "actor_obs_normalizer"):
+#         normalizer = policy_nn.actor_obs_normalizer
+#     elif hasattr(policy_nn, "student_obs_normalizer"):
+#         normalizer = policy_nn.student_obs_normalizer
+#     else:
+#         normalizer = None
+
+#     # export policy to onnx/jit
+#     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+#     export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+#     export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+
+#     # export encoder to onnx 
+#     export_dwaq_encoder_as_onnx(
+#     policy=policy_nn,
+#     path=export_model_dir,
+#     filename="encoder.onnx",
+#     )
+
+#     dt = env.unwrapped.step_dt
+
+#     # 显示地形信息
+#     print(f"\n{'='*60}")
+#     if env_cfg.scene.terrain.terrain_type == "plane":
+#         print(f"[INFO] 当前地形: plane (平面)")
+#     elif env_cfg.scene.terrain.terrain_type == "generator" and env_cfg.scene.terrain.terrain_generator is not None:
+#         terrain_gen_cfg = env_cfg.scene.terrain.terrain_generator
+#         # 获取当前环境的地形类型
+#         if hasattr(env.unwrapped.scene.terrain, 'terrain_types'):
+#             terrain_types = env.unwrapped.scene.terrain.terrain_types
+#             terrain_type_names = list(terrain_gen_cfg.sub_terrains.keys())
+#             terrain_type_idx = terrain_types[0].item() if torch.is_tensor(terrain_types) else terrain_types[0]
+#             terrain_name = terrain_type_names[terrain_type_idx] if terrain_type_idx < len(terrain_type_names) else "unknown"
+            
+#             # 获取当前地形level
+#             if hasattr(env.unwrapped.scene.terrain, 'terrain_levels'):
+#                 terrain_level = env.unwrapped.scene.terrain.terrain_levels[0].item()
+#                 print(f"[INFO] 当前地形: {terrain_name} (level={terrain_level})")
+#             else:
+#                 print(f"[INFO] 当前地形: {terrain_name}")
+#         else:
+#             print(f"[INFO] 当前地形: generator (无法获取具体类型)")
+#     else:
+#         print(f"[INFO] 当前地形: 未知")
+#     print(f"{'='*60}\n")
+
+#     # reset environment
+#     obs = env.get_observations()
+#     if version("rsl-rl-lib").startswith("2.3."):
+#         obs, _ = env.get_observations()
+
+#     # 调试：打印观测详细信息
+#     # print(f"\n{'='*60}")
+#     # print(f"[DEBUG] Observation shape: {obs.shape}")
+#     # print(f"[DEBUG] Observation dtype: {obs.dtype}")
+#     # print(f"[DEBUG] Observation device: {obs.device}")
+#     # print(f"[DEBUG] Observation sample (first env): {obs[0]}")
+#     # print(f"[DEBUG] Number of environments: {env.unwrapped.num_envs}")
+#     # print(f"[DEBUG] Policy network type: {type(policy_nn)}")
+#     # if hasattr(policy_nn, 'encoder'):
+#     #     print(f"[DEBUG] Has encoder (DWAQ model)")
+#     # print(f"{'='*60}\n")
+    
+#     timestep = 0
+#     # simulate environment
+#     while simulation_app.is_running():
+#         start_time = time.time()
+#         # run everything in inference mode
+#         with torch.inference_mode():
+#             # agent stepping
+#             actions = policy(obs)
+#             # env stepping
+#             obs, _, _, _ = env.step(actions)
+#         if args_cli.video:
+#             timestep += 1
+#             # Exit the play loop after recording one video
+#             if timestep == args_cli.video_length:
+#                 break
+
+#         # time delay for real-time evaluation
+#         sleep_time = dt - (time.time() - start_time)
+#         if args_cli.real_time and sleep_time > 0:
+#             time.sleep(sleep_time)
+
+#     # close the simulator
+#     env.close()
+
+
+# if __name__ == "__main__":
+#     # run the main function
+#     main()
+#     # close sim app
+#     simulation_app.close()
+
+
+
+
 # Copyright (c) 2022-2025, The Isaac Lab Project Developers.
 # All rights reserved.
 #
@@ -63,54 +352,132 @@ from isaaclab_tasks.utils import get_checkpoint_path
 import unitree_rl_lab.tasks  # noqa: F401
 from unitree_rl_lab.utils.parser_cfg import parse_env_cfg
 
+
 import copy
 
-class DWAQEncoderONNX(torch.nn.Module):
-    """
-    ONNX wrapper for DWAQ encoder.
-    Input : [B, history_len * obs_dim]
-    Output: [B, cenet_out_dim]  (code)
-    """
+class DWAQ_ALL_ONNX(torch.nn.Module):
     def __init__(self, policy):
         super().__init__()
-        self.policy = policy
+        self.encoder = copy.deepcopy(policy.encoder)
+        self.encode_mean_latent = copy.deepcopy(policy.encode_mean_latent)
+        # self.encode_logvar_latent = copy.deepcopy(policy.encode_logvar_latent)
+        self.encode_mean_vel = copy.deepcopy(policy.encode_vel)
+        # self.encode_logvar_vel = copy.deepcopy(policy.encode_logvar_vel)
+        self.actor = copy.deepcopy(policy.actor)
+        
+        self.history_length = policy.history_length
+        self.num_policy_obs = policy.num_policy_obs
 
     def forward(self, obs_history_flat: torch.Tensor):
-        # 直接复用你真实的 DWAQ 逻辑
-        # cenet_forward returns: code(19), vel(3), decode(45), mean_latent(16), logvar_latent(16)
-        code, _, _, _, _ = self.policy.cenet_forward(obs_history_flat)
-        return code
+
+        #encoder网络正向推理
+        last_obs = obs_history_flat[:, -self.num_policy_obs:]
+        encoder_input = torch.cat((obs_history_flat, last_obs), dim=1)
+        distribution = self.encoder(encoder_input)
+        mean_latent = self.encode_mean_latent(distribution)
+        # logvar_latent = self.encode_logvar_latent(distribution)
+        mean_vel = self.encode_mean_vel(distribution)
+        # logvar_vel = self.encode_logvar_vel(distribution)
+        
+        code_latent = mean_latent  # 推理时直接使用均值
+        code_vel = mean_vel  # 推理时直接使用均值
+        code = torch.cat((code_vel, code_latent), dim=-1)
+        
+        #读取当前观测
+        batch_size = obs_history_flat.shape[0]
+        obs_history = obs_history_flat.reshape(batch_size, self.history_length, self.num_policy_obs)
+        current_obs = obs_history[:, -1, :]  # 取最后一帧 [B, obs_dim]
+        
+        #policy输入------注意顺序
+        actor_input = torch.cat((current_obs,code), dim=-1)
+        
+        # 
+        actions = self.actor(actor_input)
+        
+        return actions
     
-def export_dwaq_encoder_as_onnx(
+def export_all_onnx(
     policy,
     path: str,
-    filename: str = "encoder.onnx",
+    filename: str = "policy.onnx",
 ):
+
     os.makedirs(path, exist_ok=True)
 
-    encoder_wrapper = DWAQEncoderONNX(policy)
-    encoder_wrapper = copy.deepcopy(encoder_wrapper)
-    encoder_wrapper.to("cpu")
-    encoder_wrapper.eval()
+    merged_wrapper = DWAQ_ALL_ONNX(policy)
+    merged_wrapper.to("cpu")
+    merged_wrapper.eval()
 
-    # Encoder expects history_length + 1 timesteps (5 history + 1 current)
-    dummy = torch.zeros(
+    # 创建虚拟输入：[batch_size=1, history_len * obs_dim]
+    dummy_input = torch.zeros(
         1,
-        (policy.history_length + 1) * policy.num_policy_obs,
+        policy.history_length * policy.num_policy_obs,
     )
 
     torch.onnx.export(
-        encoder_wrapper,
-        dummy,
+        merged_wrapper,
+        dummy_input,
         os.path.join(path, filename),
         export_params=True,
         opset_version=18,
-        input_names=["obs_history"],
-        output_names=["code"],
+        input_names=["obs"],
+        output_names=["actions"],
         dynamic_axes={},
+        verbose=False,
     )
 
-    print(f"[INFO] Exported DWAQ encoder to {os.path.join(path, filename)}")
+    print(f"[INFO] Exported merged DWAQ model (encoder + policy) to {os.path.join(path, filename)}")
+
+#之前的
+# class DWAQEncoderONNX(torch.nn.Module):
+#     """
+#     ONNX wrapper for DWAQ encoder.
+#     Input : [B, history_len * obs_dim]
+#     Output: [B, cenet_out_dim]  (code)
+#     """
+#     def __init__(self, policy):
+#         super().__init__()
+#         self.policy = policy
+
+#     def forward(self, obs_history_flat: torch.Tensor):
+#         # 直接复用你真实的 DWAQ 逻辑
+#         code, _, _, _, _, _, _ = self.policy.cenet_forward(obs_history_flat)
+#         return code
+
+
+    
+    
+# def export_dwaq_encoder_as_onnx(
+#     policy,
+#     path: str,
+#     filename: str = "encoder.onnx",
+# ):
+#     os.makedirs(path, exist_ok=True)
+
+#     encoder_wrapper = DWAQEncoderONNX(policy)
+#     encoder_wrapper = copy.deepcopy(encoder_wrapper)
+#     encoder_wrapper.to("cpu")
+#     encoder_wrapper.eval()
+
+#     dummy = torch.zeros(
+#         1,
+#         policy.history_length * policy.num_policy_obs,
+#     )
+
+#     torch.onnx.export(
+#         encoder_wrapper,
+#         dummy,
+#         os.path.join(path, filename),
+#         export_params=True,
+#         opset_version=18,
+#         input_names=["obs_history"],
+#         output_names=["code"],
+#         dynamic_axes={},
+#     )
+
+#     print(f"[INFO] Exported DWAQ encoder to {os.path.join(path, filename)}")
+
+
 
 
 
@@ -201,46 +568,34 @@ def main():
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
     export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
-
+    
     # export encoder to onnx 
-    export_dwaq_encoder_as_onnx(
-    policy=policy_nn,
-    path=export_model_dir,
-    filename="encoder.onnx",
+    # export_dwaq_encoder_as_onnx(
+    #     policy=policy_nn,
+    #     path=export_model_dir,
+    #     filename="encoder.onnx",
+    # )
+    
+    #export all onnx
+    export_all_onnx(
+        policy=policy_nn,
+        path=export_model_dir,
+        filename="policy.onnx",
     )
+
+    
+
+
+
 
     dt = env.unwrapped.step_dt
 
-    # 显示地形信息
-    print(f"\n{'='*60}")
-    if env_cfg.scene.terrain.terrain_type == "plane":
-        print(f"[INFO] 当前地形: plane (平面)")
-    elif env_cfg.scene.terrain.terrain_type == "generator" and env_cfg.scene.terrain.terrain_generator is not None:
-        terrain_gen_cfg = env_cfg.scene.terrain.terrain_generator
-        # 获取当前环境的地形类型
-        if hasattr(env.unwrapped.scene.terrain, 'terrain_types'):
-            terrain_types = env.unwrapped.scene.terrain.terrain_types
-            terrain_type_names = list(terrain_gen_cfg.sub_terrains.keys())
-            terrain_type_idx = terrain_types[0].item() if torch.is_tensor(terrain_types) else terrain_types[0]
-            terrain_name = terrain_type_names[terrain_type_idx] if terrain_type_idx < len(terrain_type_names) else "unknown"
-            
-            # 获取当前地形level
-            if hasattr(env.unwrapped.scene.terrain, 'terrain_levels'):
-                terrain_level = env.unwrapped.scene.terrain.terrain_levels[0].item()
-                print(f"[INFO] 当前地形: {terrain_name} (level={terrain_level})")
-            else:
-                print(f"[INFO] 当前地形: {terrain_name}")
-        else:
-            print(f"[INFO] 当前地形: generator (无法获取具体类型)")
-    else:
-        print(f"[INFO] 当前地形: 未知")
-    print(f"{'='*60}\n")
 
     # reset environment
     obs = env.get_observations()
     if version("rsl-rl-lib").startswith("2.3."):
         obs, _ = env.get_observations()
-
+    
     # 调试：打印观测详细信息
     # print(f"\n{'='*60}")
     # print(f"[DEBUG] Observation shape: {obs.shape}")
@@ -263,13 +618,15 @@ def main():
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+            
+            
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break
 
-        # time delay for real-time evaluation
+        # time delay for real-time evaluation  确保运行速度一致
         sleep_time = dt - (time.time() - start_time)
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
@@ -283,3 +640,4 @@ if __name__ == "__main__":
     main()
     # close sim app
     simulation_app.close()
+
