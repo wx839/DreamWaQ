@@ -29,6 +29,7 @@ struct ObservationTermCfg
         for(int i(0); i < history_length; ++i) add(obs);
     }
 
+    //维护历史信息 
     void add(std::vector<float> obs)
     {
         for(int j = 0; j < obs.size(); ++j)

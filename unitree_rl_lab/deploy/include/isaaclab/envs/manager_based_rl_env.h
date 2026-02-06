@@ -44,6 +44,7 @@ public:
 
         // load managers
         action_manager = std::make_unique<ActionManager>(cfg["actions"], this);
+        //在config中查找名为observations的键
         observation_manager = std::make_unique<ObservationManager>(cfg["observations"], this);
     }
 

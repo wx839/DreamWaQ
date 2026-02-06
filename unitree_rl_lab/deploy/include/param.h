@@ -44,6 +44,8 @@ inline std::filesystem::path proj_dir;
 inline std::filesystem::path config_dir;
 inline YAML::Node config;
 
+
+//函数获取的是当前正在运行的可执行文件的完整绝对路径，一直到go2_ctrl  
 inline std::filesystem::path get_bin_path() {
     std::vector<char> path(1024);
     ssize_t len = readlink("/proc/self/exe", &path[0], path.size());
@@ -56,7 +58,8 @@ inline std::filesystem::path get_bin_path() {
     }
 }
 
-/* ---------- config.yaml ---------- */
+/* ---------- config.yaml ---------- */  
+// 配置文件加载  
 inline void load_config_file()
 {
     assert(std::filesystem::exists(bin_path)); // run param::helper before this function
@@ -124,14 +127,14 @@ inline po::variables_map helper(int argc, char** argv)
     bin_path = get_bin_path();
     load_config_file();
 
-    po::options_description desc("Unitree Controller");
+    po::options_description desc("Unitree Controller"); //创建命令行参数说明对象，也就是如果输入了./go2_ctrl --help，它会输出下面一对消息  
     desc.add_options()
         ("help,h", "produce help message")
         ("version,v", "show version")
         ("log", "record log file")
         ("network,n", po::value<std::string>()->default_value(""), "dds network interface")
         ;
-
+    //创建容器保存解析后的参数和值  
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);

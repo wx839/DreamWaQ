@@ -24,7 +24,7 @@ public:
     virtual void run() {}
     virtual void post_run() {}
 
-    virtual void exit() {}
+    virtual void exit() {}                        // 虚函数，运行时多态，可被派生类重写
 
     std::string getStateString() { return FSMStringMap.left.at(state_); }
     int getState() {return state_; }

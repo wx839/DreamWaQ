@@ -16,6 +16,8 @@ FSM:
     transitions: 
       Passive: LT + B.on_pressed
       Velocity: start.on_pressed
+    # kp: [60, 80, 80, 60, 80, 80, 60, 80, 80, 60, 80, 80]
+    # kd: [5, 4, 4, 5, 4, 4, 5, 4, 4, 5, 4, 4]
     kp: [60, 80, 80, 60, 80, 80, 60, 80, 80, 60, 80, 80]
     kd: [5, 4, 4, 5, 4, 4, 5, 4, 4, 5, 4, 4]
     ts: [0, 1, 2]
@@ -27,5 +29,4 @@ FSM:
   Velocity:
     transitions: 
       Passive: LT + B.on_pressed
-    policy_dir: ../../../logs/rsl_rl/unitree_go2_velocity
-    
+    policy_dir: /home/langyi/下载/go2_deploy_fin/deploy/robots/go2/config/sim2sim/sim2sim 

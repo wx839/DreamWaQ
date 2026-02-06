@@ -67,6 +67,8 @@ public:
     std::vector<float> processed_actions()
     {
         std::vector<float> actions;
+        actions.clear(); 
+        actions.reserve(12); 
         for(auto & term : _terms)
         {
             auto term_action = term->processed_actions();
@@ -80,8 +82,12 @@ public:
         _action = action;
         int idx = 0;
         for(auto & term : _terms)
-        {
-            auto term_action = std::vector<float>(action.begin() + idx, action.begin() + idx + term->action_dim());
+        {   
+            std::vector<float> term_action; 
+            term_action.clear(); 
+            term_action.resize(term->action_dim()); 
+            term_action.assign(action.begin() + idx, action.begin() + idx + term->action_dim()); 
+            // auto term_action = std::vector<float>(action.begin() + idx, action.begin() + idx + term->action_dim()); 
             term->process_actions(term_action);
             idx += term->action_dim();
         }

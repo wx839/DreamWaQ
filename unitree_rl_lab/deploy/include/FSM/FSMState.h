@@ -55,13 +55,13 @@ public:
 
     void pre_run()
     {
-        lowstate->update();
+        lowstate->update();                              // 更新硬件层的传感器数据 lowstate
         if(keyboard) keyboard->update();
     }
 
     void post_run()
     {
-        lowcmd->unlockAndPublish();
+        lowcmd->unlockAndPublish();                     // 通过 DDS 通信将 lowcmd 发送给电机
     }
 
     static std::unique_ptr<LowCmd_t> lowcmd;

@@ -63,11 +63,15 @@ public:
     const std::vector<float> compute_group(const std::string& group_name)
     {
         std::vector<float> obs;
+        obs.clear(); 
+        obs.reserve(1000); //预分配空间，减少动态扩展次数 
         auto& group_terms = group_obs_term_cfgs_.at(group_name);
 
         for(auto & term : group_terms) {
             term.add(term.func(this->env, term.params));
+            
         }
+        use_gym_history = true; 
 
         if(use_gym_history)
         {
